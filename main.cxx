@@ -2,10 +2,16 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <algorithm>
 
 constexpr char capitalStart = 0x00;
 constexpr char smallStart   = 0x1a;
 constexpr char numberStart  = 0x34;
+
+union int32char{
+  uint32_t dataInt;
+  char dataChar[4];
+};
 
 char charTable(char in){
   if(in >= numberStart)  return '0' + (in - numberStart);
@@ -14,13 +20,28 @@ char charTable(char in){
 }
 
 void encode(const char *in, char *out){
-  char mask6 = 0x3F;
-  char mask4 = 0x0F;
-  char mask2 = 0x03;
-  out[0] = charTable((in[0]&(mask6<<2))>>2);
-  out[1] = charTable(((in[0]&mask2)<<4) + ((in[1]&(mask4<<4))>>4));
-  out[2] = charTable(((in[1]&mask4)<<2) + (in[2]&((mask2<<6)>>6)));
-  out[3] = charTable(in[2]&(mask6));
+  int32char tmp;
+  tmp.dataInt = 0;
+  for(int i = 0; i < 3; ++i) tmp.dataChar[2-i] = in[i];
+  for(int i = 0; i < 4; ++i){
+    out[3-i] = charTable(tmp.dataInt&0x3F);
+    tmp.dataInt >>= 6;
+  }
+}
+
+void encodePadded(const char *in, char *out, int sz){
+  if(sz == 0) return;
+  int32char tmp;
+  tmp.dataInt = 0;
+  for(int i = 0; i < sz; ++i) tmp.dataChar[2-i] = in[i];
+  int nout = (sz*8+5)/6;
+  for(int i = 0; i < 4; ++i){
+    out[3-i] = charTable(tmp.dataInt&0x3F);
+    tmp.dataInt >>= 6;
+  }
+  for(int i = nout; i < 4; ++i){
+    out[i] = '=';
+  }
 }
 
 int main(int argc, char **argv){
@@ -29,21 +50,31 @@ int main(int argc, char **argv){
     return 0;
   }
   in.open(argv[1], std::ios::binary | std::ios::in | std::ios::ate);
-  auto size = in.tellg();
+  size_t size = in.tellg();
 
   auto indata = new char[size];
   in.seekg(0);
   in.read(indata, size);
 
-  char *outdata = nullptr;
-  int ngroup;
+  char *outData = nullptr;
+  size_t nGroup, nLeft, outSize;
   {
-    ngroup = size / 3 + 1;
-    outdata = new char[ngroup*4];
+    nGroup = (size+2) / 3;
+    outSize = nGroup*4;
+    outData = new char[nGroup*4];
+    nLeft = size % 3;
   }
-  for(int i = 0; i < ngroup - 1; ++i){
-    encode(indata + 3*i, outdata + 4*i);
+  for(int i = 0; i < nGroup - 1; ++i){
+    encode(indata + 3*i, outData + 4*i);
   }
-  std::cout << outdata << std::endl;
+  encodePadded(indata + 3*(nGroup-1), outData+4*(nGroup-1), nLeft);
+  for(int i = 0; i < outSize; ++i){
+    std::cout.put(outData[i]);
+    if((i+1) % 76 == 0){
+      std::cout.put(0x0D);
+      std::cout.put(0x0A);
+    }
+  }
+  std::cout<<std::endl;
   return 0;
 }
