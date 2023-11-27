@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <numeric>
 
 constexpr char capitalStart = 0x00;
 constexpr char smallStart   = 0x1a;
@@ -61,6 +62,20 @@ void decode(const char *in, char *out){
   out[2] = tmp.dataChar[0];
 }
 
+void decodePadded(const char *in, char *out){
+  int32char tmp;
+  tmp.dataInt = 0;
+  int nPadded = std::count_if(in, in+4, [](char c){return c=='=';});
+  int nOut = ((4-nPadded)*6)/8;
+
+  for(int i = 0; i < 4-nPadded; ++i){
+    tmp.dataInt += binTable(in[i]) << (3-i)*6;
+  }
+  for(int i = 0; i < nOut; ++i){
+    out[i] = tmp.dataChar[2-i];
+  }
+}
+
 std::vector<char> readData(const std::string &path, bool doEncode){
   std::ifstream in;
   in.open(path, std::ios::binary | std::ios::in | std::ios::ate);
@@ -96,7 +111,7 @@ void writeData(std::ostream &out, const std::vector<char> &outData, bool doEncod
       }
     }
   }
-  out << std::endl;
+  if(doEncode) out << std::endl;
 }
 
 int main(int argc, char **argv){
@@ -131,6 +146,7 @@ int main(int argc, char **argv){
     for(int i = 0; i < nGroup - 1; ++i){
       decode(data.data() + 4*i, outData.data() + 3*i);
     }
+    decodePadded(data.data() + 4*(nGroup-1), outData.data()+3*(nGroup-1));
   }
   writeData(std::cout, outData, doEncode);
   return 0;
